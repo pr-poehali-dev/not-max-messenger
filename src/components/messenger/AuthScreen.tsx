@@ -17,7 +17,18 @@ const AuthScreen = ({ onAuth }: Props) => {
   const [codeDigits, setCodeDigits] = useState(["", "", "", "", "", ""]);
   const [uid, setUid] = useState("");
 
-  const { sendCode, verifyCode, saveProfile, loadProfile, loading, error, setError } = useFirebaseAuth();
+  const { sendCode, verifyCode, saveProfile, loadProfile, resendCode, loading, error, setError } = useFirebaseAuth();
+  const [resendTimer, setResendTimer] = useState(0);
+
+  const startResendTimer = () => {
+    setResendTimer(60);
+    const interval = setInterval(() => {
+      setResendTimer(t => {
+        if (t <= 1) { clearInterval(interval); return 0; }
+        return t - 1;
+      });
+    }, 1000);
+  };
 
   const formatPhone = (raw: string) => {
     const digits = raw.replace(/\D/g, "");
@@ -31,8 +42,8 @@ const AuthScreen = ({ onAuth }: Props) => {
       return;
     }
     const formatted = formatPhone(phone);
-    const ok = await sendCode(formatted, "recaptcha-container");
-    if (ok) setStep("code");
+    const ok = await sendCode(formatted, "send-code-btn");
+    if (ok) { setStep("code"); startResendTimer(); }
   };
 
   const handleCodeDigit = (val: string, idx: number) => {
@@ -74,7 +85,7 @@ const AuthScreen = ({ onAuth }: Props) => {
 
   return (
     <div className="h-screen w-full flex items-center justify-center bg-nm-bg">
-      <div id="recaptcha-container" />
+      <div id="recaptcha-container" style={{ display: "none" }} />
 
       <div className="w-full max-w-[390px] h-screen flex flex-col items-center justify-center px-8 relative overflow-hidden">
         <div className="absolute top-[-100px] left-1/2 -translate-x-1/2 w-[400px] h-[400px] rounded-full bg-nm-accent/10 blur-[80px] pointer-events-none" />
@@ -108,13 +119,14 @@ const AuthScreen = ({ onAuth }: Props) => {
               className="w-full bg-nm-surface border border-nm-border rounded-2xl px-4 py-3.5 text-white text-center text-lg placeholder:text-nm-muted focus:outline-none focus:border-nm-accent transition-colors"
             />
             <button
+              id="send-code-btn"
               onClick={handlePhone}
               disabled={loading}
               className="w-full mt-4 bg-nm-accent hover:bg-nm-accent/90 disabled:opacity-50 text-white font-semibold py-3.5 rounded-2xl transition-all active:scale-95 flex items-center justify-center gap-2"
             >
               {loading
                 ? <><Icon name="Loader2" size={18} className="animate-spin" /> Отправляем код...</>
-                : "Получить код"}
+                : "Получить код по SMS"}
             </button>
           </div>
         )}
@@ -151,6 +163,24 @@ const AuthScreen = ({ onAuth }: Props) => {
                 <Icon name="Loader2" size={16} className="animate-spin" /> Проверяем код...
               </div>
             )}
+            <div className="text-center mt-2">
+              {resendTimer > 0 ? (
+                <p className="text-nm-muted text-sm">Повторная отправка через {resendTimer} сек</p>
+              ) : (
+                <button
+                  id="resend-code-btn"
+                  onClick={async () => {
+                    setCodeDigits(["", "", "", "", "", ""]);
+                    const ok = await resendCode(formatPhone(phone), "resend-code-btn");
+                    if (ok) startResendTimer();
+                  }}
+                  disabled={loading}
+                  className="text-nm-accent text-sm underline underline-offset-2 disabled:opacity-50"
+                >
+                  Отправить код повторно
+                </button>
+              )}
+            </div>
           </div>
         )}
 
