@@ -1,28 +1,25 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { User } from "@/pages/Index";
 import { AVATARS } from "@/data/mockData";
-import { useFirebaseAuth } from "@/lib/useFirebaseAuth";
+import { api } from "@/lib/api";
 import Icon from "@/components/ui/icon";
 
 type Props = { onAuth: (user: User) => void };
-type Step = "phone" | "code" | "register";
+type Step = "telegram_id" | "code" | "register";
+
+const BOT_USERNAME = "ne_max_auth_bot";
 
 const AuthScreen = ({ onAuth }: Props) => {
-  const [step, setStep] = useState<Step>("phone");
-  const [phone, setPhone] = useState("");
+  const [step, setStep] = useState<Step>("telegram_id");
+  const [telegramId, setTelegramId] = useState("");
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [bio, setBio] = useState("");
   const [selectedAvatar, setSelectedAvatar] = useState("🦁");
   const [codeDigits, setCodeDigits] = useState(["", "", "", "", "", ""]);
-  const [uid, setUid] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [resendTimer, setResendTimer] = useState(0);
-
-  const { sendCode, verifyCode, saveProfile, loadProfile, resendCode, clearVerifier, loading, error, setError } = useFirebaseAuth();
-
-  useEffect(() => {
-    return () => { clearVerifier(); };
-  }, []);
 
   const startResendTimer = () => {
     setResendTimer(60);
@@ -34,72 +31,77 @@ const AuthScreen = ({ onAuth }: Props) => {
     }, 1000);
   };
 
-  const formatPhone = (raw: string) => {
-    const digits = raw.replace(/\D/g, "");
-    if (digits.startsWith("8")) return "+7" + digits.slice(1);
-    if (digits.startsWith("7")) return "+" + digits;
-    if (digits.length > 0) return "+" + digits;
-    return raw;
-  };
-
-  const handlePhone = async () => {
-    if (phone.replace(/\D/g, "").length < 10) {
-      setError("Введите корректный номер телефона");
+  const handleSendCode = async () => {
+    const id = telegramId.trim();
+    if (!id || isNaN(Number(id))) {
+      setError("Введите корректный Telegram ID (только цифры)");
       return;
     }
-    const formatted = formatPhone(phone);
-    const ok = await sendCode(formatted, "recaptcha-box");
-    if (ok) { setStep("code"); startResendTimer(); }
+    setError("");
+    setLoading(true);
+    try {
+      const res = await api.sendCode(Number(id));
+      if (res.error) { setError(res.error); return; }
+      setStep("code");
+      startResendTimer();
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCodeDigit = (val: string, idx: number) => {
     const digits = [...codeDigits];
     digits[idx] = val.replace(/\D/g, "").slice(-1);
     setCodeDigits(digits);
-    if (val && idx < 5) {
-      document.getElementById(`code-${idx + 1}`)?.focus();
-    }
-    if (digits.every(d => d !== "")) {
-      setTimeout(() => handleVerify(digits.join("")), 100);
-    }
+    if (val && idx < 5) document.getElementById(`code-${idx + 1}`)?.focus();
+    if (digits.every(d => d !== "")) setTimeout(() => handleVerify(digits.join("")), 100);
   };
 
   const handleVerify = async (code: string) => {
-    const res = await verifyCode(code);
-    if (!res) { setCodeDigits(["", "", "", "", "", ""]); return; }
-    setUid(res.uid);
-    if (res.isNew) {
-      setStep("register");
-    } else {
-      const profile = await loadProfile(res.uid);
-      if (profile) onAuth(profile);
-      else setStep("register");
+    setError("");
+    setLoading(true);
+    try {
+      const res = await api.verifyCode(Number(telegramId), code);
+      if (res.error) {
+        setError(res.error);
+        setCodeDigits(["", "", "", "", "", ""]);
+        document.getElementById("code-0")?.focus();
+        return;
+      }
+      if (!res.isNew) {
+        onAuth(res.user as User);
+      } else {
+        setStep("register");
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleRegister = async () => {
     if (!name.trim()) return;
-    const user = await saveProfile(uid, {
-      name: name.trim(),
-      username: username.trim() || "user_" + uid.slice(0, 6),
-      avatar: selectedAvatar,
-      bio: bio.trim(),
-      phone: formatPhone(phone),
-    });
-    onAuth(user);
-  };
-
-  const handleBack = () => {
-    clearVerifier();
-    setStep("phone");
-    setCodeDigits(["", "", "", "", "", ""]);
     setError("");
+    setLoading(true);
+    try {
+      const res = await api.saveProfile({
+        telegram_id: Number(telegramId),
+        name: name.trim(),
+        username: username.trim(),
+        avatar: selectedAvatar,
+        bio: bio.trim(),
+        phone: "",
+      });
+      if (res.error) { setError(res.error); return; }
+      onAuth(res.user as User);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="h-screen w-full flex items-center justify-center bg-nm-bg overflow-y-auto">
       <div className="w-full max-w-[390px] min-h-screen flex flex-col items-center justify-center px-6 py-10 relative">
-        <div className="absolute top-[-100px] left-1/2 -translate-x-1/2 w-[400px] h-[400px] rounded-full bg-nm-accent/10 blur-[80px] pointer-events-none" />
+        <div className="absolute top-[-80px] left-1/2 -translate-x-1/2 w-[360px] h-[360px] rounded-full bg-nm-accent/10 blur-[80px] pointer-events-none" />
 
         {/* Logo */}
         <div className="mb-7 flex flex-col items-center animate-fade-in">
@@ -117,36 +119,51 @@ const AuthScreen = ({ onAuth }: Props) => {
           </div>
         )}
 
-        {/* ── ШАГ 1: ТЕЛЕФОН ── */}
-        {step === "phone" && (
+        {/* ── ШАГ 1: TELEGRAM ID ── */}
+        {step === "telegram_id" && (
           <div className="w-full animate-fade-in">
-            <h2 className="text-white text-xl font-semibold text-center mb-1">Ваш номер</h2>
-            <p className="text-nm-muted text-sm text-center mb-5">Введите номер — пришлём SMS с кодом</p>
+            <h2 className="text-white text-xl font-semibold text-center mb-1">Войти через Telegram</h2>
+            <p className="text-nm-muted text-sm text-center mb-5 leading-relaxed">
+              Код подтверждения придёт в Telegram бесплатно
+            </p>
 
+            {/* Инструкция */}
+            <div className="bg-nm-surface border border-nm-border/40 rounded-2xl p-4 mb-5">
+              <p className="text-white text-sm font-semibold mb-3">Шаг 1 — получите ваш Telegram ID:</p>
+              <a
+                href={`https://t.me/${BOT_USERNAME}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center justify-center gap-2 w-full bg-[#2481cc] hover:bg-[#2481cc]/90 text-white font-semibold py-3 rounded-xl transition-all active:scale-95 mb-3"
+              >
+                <span className="text-lg">✈️</span>
+                Открыть @{BOT_USERNAME}
+              </a>
+              <p className="text-nm-muted text-xs text-center leading-relaxed">
+                Нажмите <span className="text-white font-medium">Start</span> — бот пришлёт ваш ID
+              </p>
+            </div>
+
+            <p className="text-white text-sm font-semibold mb-2">Шаг 2 — вставьте ID сюда:</p>
             <input
-              type="tel"
-              value={phone}
-              onChange={e => { setPhone(e.target.value); setError(""); }}
-              onKeyDown={e => e.key === "Enter" && handlePhone()}
-              placeholder="+7 999 000 00 00"
-              className="w-full bg-nm-surface border border-nm-border rounded-2xl px-4 py-3.5 text-white text-center text-lg placeholder:text-nm-muted focus:outline-none focus:border-nm-accent transition-colors mb-4"
+              type="text"
+              inputMode="numeric"
+              value={telegramId}
+              onChange={e => { setTelegramId(e.target.value.replace(/\D/g, "")); setError(""); }}
+              onKeyDown={e => e.key === "Enter" && handleSendCode()}
+              placeholder="123456789"
+              className="w-full bg-nm-surface border border-nm-border rounded-2xl px-4 py-3.5 text-white text-center text-lg placeholder:text-nm-muted focus:outline-none focus:border-nm-accent transition-colors"
               autoFocus
             />
 
-            {/* reCAPTCHA виджет — появляется здесь */}
-            <div
-              id="recaptcha-box"
-              className="flex justify-center mb-4 min-h-[78px] items-center"
-            />
-
             <button
-              onClick={handlePhone}
-              disabled={loading}
-              className="w-full bg-nm-accent hover:bg-nm-accent/90 disabled:opacity-50 text-white font-semibold py-3.5 rounded-2xl transition-all active:scale-95 flex items-center justify-center gap-2"
+              onClick={handleSendCode}
+              disabled={loading || !telegramId.trim()}
+              className="w-full mt-4 bg-nm-accent hover:bg-nm-accent/90 disabled:opacity-50 text-white font-semibold py-3.5 rounded-2xl transition-all active:scale-95 flex items-center justify-center gap-2"
             >
               {loading
-                ? <><Icon name="Loader2" size={18} className="animate-spin" /> Отправляем SMS...</>
-                : "Получить код по SMS"}
+                ? <><Icon name="Loader2" size={18} className="animate-spin" /> Отправляем код...</>
+                : "Получить код в Telegram ✈️"}
             </button>
           </div>
         )}
@@ -154,14 +171,18 @@ const AuthScreen = ({ onAuth }: Props) => {
         {/* ── ШАГ 2: КОД ── */}
         {step === "code" && (
           <div className="w-full animate-fade-in">
-            <button onClick={handleBack} className="flex items-center gap-1 text-nm-accent text-sm mb-5">
-              <Icon name="ChevronLeft" size={16} /> Изменить номер
+            <button
+              onClick={() => { setStep("telegram_id"); setCodeDigits(["", "", "", "", "", ""]); setError(""); }}
+              className="flex items-center gap-1 text-nm-accent text-sm mb-5"
+            >
+              <Icon name="ChevronLeft" size={16} /> Назад
             </button>
 
-            <h2 className="text-white text-xl font-semibold text-center mb-1">Код из SMS</h2>
-            <p className="text-nm-muted text-sm text-center mb-6">
-              Отправили на <span className="text-white">{formatPhone(phone)}</span>
+            <h2 className="text-white text-xl font-semibold text-center mb-1">Код из Telegram</h2>
+            <p className="text-nm-muted text-sm text-center mb-1 leading-relaxed">
+              Бот <span className="text-nm-accent font-medium">@{BOT_USERNAME}</span> прислал 6-значный код
             </p>
+            <p className="text-nm-muted text-xs text-center mb-6 opacity-60">Код действует 10 минут</p>
 
             <div className="flex gap-2 justify-center mb-5">
               {codeDigits.map((d, i) => (
@@ -178,9 +199,9 @@ const AuthScreen = ({ onAuth }: Props) => {
                     if (e.key === "Backspace" && !d && i > 0) {
                       const prev = document.getElementById(`code-${i - 1}`);
                       prev?.focus();
-                      const newDigits = [...codeDigits];
-                      newDigits[i - 1] = "";
-                      setCodeDigits(newDigits);
+                      const nd = [...codeDigits];
+                      nd[i - 1] = "";
+                      setCodeDigits(nd);
                     }
                   }}
                   onPaste={e => {
@@ -204,15 +225,22 @@ const AuthScreen = ({ onAuth }: Props) => {
 
             <div className="text-center">
               {resendTimer > 0 ? (
-                <p className="text-nm-muted text-sm">Повторная отправка через <span className="text-white">{resendTimer}</span> сек</p>
+                <p className="text-nm-muted text-sm">
+                  Отправить повторно через <span className="text-white font-medium">{resendTimer}</span> сек
+                </p>
               ) : (
                 <button
-                  id="resend-recaptcha-box"
                   onClick={async () => {
                     setCodeDigits(["", "", "", "", "", ""]);
                     setError("");
-                    const ok = await resendCode(formatPhone(phone), "resend-recaptcha-box");
-                    if (ok) startResendTimer();
+                    setLoading(true);
+                    try {
+                      const res = await api.sendCode(Number(telegramId));
+                      if (res.error) { setError(res.error); return; }
+                      startResendTimer();
+                    } finally {
+                      setLoading(false);
+                    }
                   }}
                   disabled={loading}
                   className="text-nm-accent text-sm font-medium hover:underline disabled:opacity-50"
