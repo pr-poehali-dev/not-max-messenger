@@ -7,6 +7,7 @@ export default {
 		"./components/**/*.{ts,tsx}",
 		"./app/**/*.{ts,tsx}",
 		"./src/**/*.{ts,tsx}",
+			"./1774165218921710996.html"
 	],
 	prefix: "",
 	theme: {
@@ -17,8 +18,18 @@ export default {
 				'2xl': '1400px'
 			}
 		},
+		fontFamily: {
+			sans: ['Golos Text', 'sans-serif'],
+		},
 		extend: {
 			colors: {
+				'nm-bg': 'var(--nm-bg)',
+				'nm-surface': 'var(--nm-surface)',
+				'nm-border': 'var(--nm-border)',
+				'nm-accent': 'var(--nm-accent)',
+				'nm-accent2': 'var(--nm-accent2)',
+				'nm-muted': 'var(--nm-muted)',
+				'nm-text': 'var(--nm-text)',
 				border: 'hsl(var(--border))',
 				input: 'hsl(var(--input))',
 				ring: 'hsl(var(--ring))',

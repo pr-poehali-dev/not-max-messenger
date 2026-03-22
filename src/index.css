@@ -4,6 +4,14 @@
 
 @layer base {
   :root {
+    --nm-bg: #0e1117;
+    --nm-surface: #161b27;
+    --nm-border: #252d3e;
+    --nm-accent: #3b8bff;
+    --nm-accent2: #7c6aff;
+    --nm-muted: #6b7a96;
+    --nm-text: #e8ecf4;
+
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
 
@@ -97,5 +105,26 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: "Golos Text", sans-serif;
+    background-color: var(--nm-bg);
   }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease both;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
 }
